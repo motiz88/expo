@@ -137,11 +137,11 @@ class ExpoImage extends React.PureComponent<ImageProps> {
     const resolvedSource = Image.resolveAssetSource(source ?? {});
     const resolvedStyle = StyleSheet.flatten([style]);
     const resolvedPlaceholder = Image.resolveAssetSource(
-      defaultSource ?? loadingIndicatorSource ?? {}
+      props.placeholder ?? defaultSource ?? loadingIndicatorSource ?? {}
     );
     const contentFit = resolveContentFit(props.contentFit, props.resizeMode);
     const contentPosition = resolveContentPosition(props.contentPosition);
-
+    console.log(resolvedPlaceholder);
     // If both are specified, we default to use default source
     if (defaultSource && loadingIndicatorSource) {
       console.warn(
@@ -224,7 +224,7 @@ class ExpoImage extends React.PureComponent<ImageProps> {
         {...resolvedStyle}
         source={Array.isArray(resolvedSource) ? resolvedSource : [resolvedSource]}
         style={resolvedStyle}
-        defaultSource={resolvedPlaceholder}
+        placeholder={resolvedPlaceholder}
         contentFit={contentFit}
         contentPosition={contentPosition}
         onLoadStart={this.onLoadStart}

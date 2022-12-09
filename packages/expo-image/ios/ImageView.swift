@@ -12,11 +12,17 @@ public final class ImageView: ExpoView {
 
   var sources: [ImageSource]?
 
-  var contentFit: ContentFit = .cover {
+  var pendingOperation: SDWebImageCombinedOperation?
+
+  var placeholderSources: [ImageSource] = [] {
     didSet {
-      sdImageView.contentMode = contentFit.toContentMode()
+      loadPlaceholder()
     }
   }
+
+  var placeholderImage: UIImage?
+
+  var contentFit: ContentFit = .cover
 
   var contentPosition: ContentPosition = .center
 
@@ -65,7 +71,9 @@ public final class ImageView: ExpoView {
   public override func didMoveToWindow() {
     if window == nil {
       // Cancel pending requests when the view is unmounted.
-      imageManager.cancelAll()
+//      imageManager.cancelAll()
+      pendingOperation?.cancel()
+      pendingOperation = nil
     } else if !bounds.isEmpty {
       // Reload the image after mounting the view with non-empty bounds.
       reload()
@@ -75,8 +83,11 @@ public final class ImageView: ExpoView {
   // MARK: - Implementation
 
   func reload() {
+    if sdImageView.image == nil {
+      renderPlaceholder()
+    }
     guard let source = bestSource else {
-      renderImage(nil)
+      renderPlaceholder()
       return
     }
     var context = SDWebImageContext()
@@ -84,8 +95,9 @@ public final class ImageView: ExpoView {
     // Cancel currently running load requests.
     // Each ImageView instance has its own image manager,
     // so it doesn't affect other views.
-    if imageManager.isRunning {
-      imageManager.cancelAll()
+    if pendingOperation?.isCancelled == false {
+      pendingOperation?.cancel()
+      pendingOperation = nil
     }
 
     // Modify URL request to add headers.
@@ -102,13 +114,37 @@ public final class ImageView: ExpoView {
 
     onLoadStart([:])
 
-    imageManager.loadImage(
+    pendingOperation = imageManager.loadImage(
       with: source.uri,
       options: loadingOptions,
       context: context,
       progress: imageLoadProgress(_:_:_:),
       completed: imageLoadCompleted(_:_:_:_:_:_:)
     )
+  }
+
+  func loadPlaceholder() {
+    guard let placeholder = placeholderSources.first, sdImageView.image == nil else {
+      return
+    }
+    var context = SDWebImageContext()
+
+    context[.imageScaleFactor] = placeholder.scale
+    context[.queryCacheType] = SDImageCacheType.disk.rawValue
+    context[.storeCacheType] = SDImageCacheType.disk.rawValue
+
+    imageManager.loadImage(with: placeholder.uri, context: context, progress: nil) { [weak self] placeholder, _, _, _, finished, _ in
+      log.debug("Placeholder loaded: \(finished)")
+      if let placeholder = placeholder {
+        log.debug("Placeholder exists")
+        self?.placeholderImage = placeholder
+
+        if self?.sdImageView.image == nil {
+          log.debug("I'm going to render the placeholder")
+          self?.renderPlaceholder()
+        }
+      }
+    }
   }
 
   // MARK: - Loading
@@ -137,6 +173,7 @@ public final class ImageView: ExpoView {
       return
     }
     if let image = image {
+      log.debug("Image loaded")
       onLoad([
         "cacheType": cacheTypeToString(cacheType),
         "source": [
@@ -159,7 +196,7 @@ public final class ImageView: ExpoView {
       applyContentPosition(contentSize: idealSize, containerSize: frame.size)
       renderImage(image)
     } else {
-      renderImage(nil)
+      renderPlaceholder()
     }
   }
 
@@ -197,43 +234,51 @@ public final class ImageView: ExpoView {
   private func renderImage(_ image: UIImage?) {
     if let transition = transition, transition.duration > 0 {
       let options = transition.toAnimationOptions()
-      UIView.transition(with: sdImageView, duration: transition.duration, options: options) { [weak sdImageView] in
-        sdImageView?.image = image
+      UIView.transition(with: sdImageView, duration: transition.duration, options: options) { [weak self] in
+        if let self = self {
+          self.setImage(image, contentFit: self.contentFit)
+        }
       }
     } else {
-      sdImageView.image = image
+      setImage(image, contentFit: contentFit)
     }
+  }
+
+  private func renderPlaceholder() {
+    guard let placeholder = placeholderImage else {
+      return
+    }
+    log.debug("rendering placeholder")
+    setImage(placeholder, contentFit: .scaleDown)
+  }
+
+  private func setImage(_ image: UIImage?, contentFit: ContentFit) {
+    log.debug("set image: \(image?.size)")
+    sdImageView.contentMode = contentFit.toContentMode()
+    sdImageView.image = image
   }
 
   // MARK: - Helpers
 
   /**
-   The image source that fits best into the view bounds, that is the one with the closest number of pixels.
-   May be `nil` if there are no sources available or the view bounds size is zero.
+   A scale of the screen where the view is presented,
+   or the main scale if the view is not mounted yet.
+   */
+  var screenScale: Double {
+    return window?.screen.scale as? Double ?? UIScreen.main.scale
+  }
+
+  /**
+   The image source that fits best into the view bounds.
    */
   var bestSource: ImageSource? {
-    guard let sources = sources, !sources.isEmpty else {
-      return nil
-    }
-    if bounds.isEmpty, window == nil {
-      return nil
-    }
-    if sources.count == 1 {
-      return sources.first
-    }
-    let scale = window?.screen.scale ?? UIScreen.main.scale
-    var bestSource: ImageSource?
-    var bestFit = Double.infinity
-    let targetPixelCount = bounds.width * bounds.height * scale * scale
+    return getBestSource(from: sources, forSize: bounds.size, scale: screenScale)
+  }
 
-    for source in sources {
-      let fit = abs(1 - (source.pixelCount / targetPixelCount))
-
-      if fit < bestFit {
-        bestSource = source
-        bestFit = fit
-      }
-    }
-    return bestSource
+  /**
+   Same as `bestSource`, but for placeholders.
+   */
+  var bestPlaceholder: ImageSource? {
+    return getBestSource(from: placeholderSources, forSize: bounds.size, scale: screenScale)
   }
 }
