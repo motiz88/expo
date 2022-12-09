@@ -1,9 +1,18 @@
 import React from 'react';
 
-import { ImageContentPosition, ImageProps, ImageSource } from './Image.types';
+import {
+  ImageContentPosition,
+  ImageProps,
+  ImageSource,
+  ImageTransition,
+  ImageTransitionEffect,
+  ImageTransitionTiming,
+  ImageUriSource,
+  RequireSource,
+} from './Image.types';
 import { resolveContentFit, resolveContentPosition } from './utils';
 
-const resolveAssetSource = (source: ImageSource | string | number | undefined | null) => {
+const resolveAssetSource = (source: ImageUriSource | RequireSource | undefined | null) => {
   if (source == null) return null;
 
   if (typeof source === 'string') {
@@ -44,10 +53,87 @@ const getObjectPositionFromContentPosition = (contentPosition?: ImageContentPosi
     .join(' ');
 };
 
-const ensureIsArray = <T extends any>(source: T | T[] | undefined) => {
+const ensureIsArray = (source?: ImageSource): (ImageUriSource | RequireSource)[] => {
   if (Array.isArray(source)) return source;
   if (source === undefined) return [];
   return [source];
+};
+
+type ImageState = 'empty' | 'loading' | 'loaded' | 'error';
+const useImageState = (source: ImageSource | undefined) => {
+  const [imageState, setImageState] = React.useState<ImageState>(source ? 'loading' : 'empty');
+  React.useEffect(() => {
+    setImageState((prevState) =>
+      prevState === 'empty' ? (source ? 'loading' : 'empty') : prevState
+    );
+  }, [source]);
+
+  const onLoad = React.useCallback(
+    () => setImageState((prevState) => (imageState === 'loading' ? 'loaded' : prevState)),
+    []
+  );
+  const handlers = React.useMemo(
+    () => ({
+      onLoad,
+    }),
+    [onLoad]
+  );
+  return [imageState, handlers] as [ImageState, { onLoad: () => void }];
+};
+
+const getCSSTiming = (timing?: ImageTransitionTiming) => {
+  return {
+    [ImageTransitionTiming.EASE_IN]: 'ease-in',
+    [ImageTransitionTiming.EASE_OUT]: 'ease-out',
+    [ImageTransitionTiming.EASE_IN_OUT]: 'ease-in-out',
+    [ImageTransitionTiming.LINEAR]: 'linear',
+  }[timing || ImageTransitionTiming.LINEAR];
+};
+
+const useTransition = (
+  transition: ImageTransition | null | undefined,
+  state: ImageState
+): Record<'placeholder' | 'image', Partial<React.CSSProperties>> => {
+  if (!transition?.effect) return { placeholder: {}, image: {} };
+  const { duration, timing, effect } = {
+    timing: ImageTransitionTiming.EASE_IN_OUT,
+    duration: 1000,
+    ...transition,
+  };
+  if (effect === ImageTransitionEffect.CROSS_DISOLVE) {
+    const commonStyles = {
+      transition: `opacity ${duration}ms`,
+      transitionTimingFunction: getCSSTiming(timing),
+    };
+    return {
+      image: {
+        opacity: state === 'loaded' ? '1' : '0',
+        ...commonStyles,
+      },
+      placeholder: {
+        opacity: state === 'loaded' ? '0' : '1',
+        ...commonStyles,
+      },
+    };
+  } else if (effect === ImageTransitionEffect.FLIP_FROM_TOP) {
+    const commonStyles = {
+      transition: `transform ${duration}ms`,
+      transformOrigin: 'top',
+      transitionTimingFunction: getCSSTiming(timing),
+    };
+    return {
+      placeholder: {
+        transform: `rotateX(${state !== 'loaded' ? '0' : '90deg'})`,
+        ...commonStyles,
+      },
+      image: {
+        transform: `rotateX(${state === 'loaded' ? '0' : '90deg'})`,
+        ...commonStyles,
+      },
+    };
+  }
+
+  return { placeholder: {}, image: {} };
 };
 
 export default function ExpoImage({
@@ -56,34 +142,56 @@ export default function ExpoImage({
   loadingIndicatorSource,
   contentPosition,
   onLoad,
+  transition,
   onLoadStart,
   onLoadEnd,
   onError,
   ...props
 }: ImageProps) {
   const { aspectRatio, backgroundColor, transform, borderColor, ...style } = props.style ?? {};
+  const [state, handlers] = useImageState(source);
+  const { placeholder: placeholderStyle, image: imageStyle } = useTransition(transition, state);
+
   const resolvedSources = ensureIsArray(source).map(resolveAssetSource);
+
   return (
-    <>
-      <picture
+    <div
+      style={{
+        aspectRatio: String(aspectRatio),
+        // backgroundColor: backgroundColor?.toString(),
+        transform: transform?.toString(),
+        borderColor: borderColor?.toString(),
+        ...style,
+        overflow: 'hidden',
+        position: 'relative',
+      }}>
+      <img
+        src={resolveAssetSource(defaultSource)?.uri}
         style={{
-          overflow: 'hidden',
-          ...style,
-        }}>
-        <img
-          src={resolvedSources.at(0)?.uri}
-          style={{
-            width: '100%',
-            height: '100%',
-            aspectRatio: String(aspectRatio),
-            backgroundColor: backgroundColor?.toString(),
-            transform: transform?.toString(),
-            borderColor: borderColor?.toString(),
-            objectFit: resolveContentFit(props.contentFit, props.resizeMode),
-            objectPosition: getObjectPositionFromContentPosition(contentPosition),
-          }}
-        />
-      </picture>
-    </>
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          objectFit: 'scale-down',
+          objectPosition: 'center',
+          ...placeholderStyle,
+        }}
+      />
+      <img
+        src={resolvedSources.at(0)?.uri}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          objectFit: resolveContentFit(props.contentFit, props.resizeMode),
+          objectPosition: getObjectPositionFromContentPosition(contentPosition),
+          ...imageStyle,
+        }}
+        onLoad={handlers.onLoad}
+      />
+    </div>
   );
 }

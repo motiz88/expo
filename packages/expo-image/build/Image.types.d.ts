@@ -1,5 +1,5 @@
 import { AccessibilityProps, ImageStyle as RNImageStyle } from 'react-native';
-export declare type ImageSource = {
+export declare type ImageUriSource = {
     /**
      * A string representing the resource identifier for the image,
      * which could be an http address, a local file path, or the name of a static image resource.
@@ -26,24 +26,25 @@ export declare type ImageStyle = RNImageStyle & {
     resizeMode?: ImageResizeMode;
     elevation?: number;
 };
-declare type RequireSource = number | string;
+export declare type RequireSource = number | string;
+export declare type ImageSource = ImageUriSource | RequireSource | (ImageUriSource | RequireSource)[];
 export declare type ImageProps = AccessibilityProps & {
     style?: ImageStyle;
     /**
      * The image source (either a remote URL or a local file resource).
      */
-    source?: ImageSource | RequireSource | (ImageSource | RequireSource)[];
+    source?: ImageSource;
     /**
      * A static image to display while loading the image source.
      * @platform android
      */
-    defaultSource?: ImageSource | null;
+    defaultSource?: ImageUriSource | null;
     /**
      * Similarly to `source`, this property represents the resource used to render the loading indicator for the image.
      * The loading indicator is displayed until image is ready to be displayed, typically after the image is downloaded.
      * @platform android
      */
-    loadingIndicatorSource?: ImageSource | null;
+    loadingIndicatorSource?: ImageUriSource | null;
     /**
      * Determines how the image should be resized to fit its container.
      * It mirrors the CSS [`object-fit`](https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit) property.
@@ -236,5 +237,4 @@ export declare type ImageProgressEventData = {
 export declare type ImageErrorEventData = {
     error: string;
 };
-export {};
 //# sourceMappingURL=Image.types.d.ts.map
