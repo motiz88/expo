@@ -160,38 +160,11 @@ class ExpoImageView(
   // region Component Props
   internal var sources: List<SourceMap> = emptyList()
   private val bestSource: SourceMap?
-    get() {
-      if (sources.isEmpty()) {
-        return null
-      }
+    get() = getBestSource(sources)
 
-      if (sources.size == 1) {
-        return sources.first()
-      }
-
-      val parent = parent as? ExpoImageViewWrapper ?: return null
-      val parentRect = Rect(0, 0, parent.width, parent.height)
-      if (parentRect.isEmpty) {
-        return null
-      }
-
-      val targetPixelCount = parentRect.width() * parentRect.height()
-
-      var bestSource: SourceMap? = null
-      var bestFit = Double.MAX_VALUE
-
-      sources.forEach {
-        val fit = abs(1 - (it.pixelCount / targetPixelCount))
-        if (fit < bestFit) {
-          bestFit = fit
-          bestSource = it
-        }
-      }
-
-      return bestSource
-    }
-
-  internal var defaultSourceMap: SourceMap? = null
+  internal var placeholders: List<SourceMap> = emptyList()
+  private val bestPlaceholder: SourceMap?
+    get() = getBestSource(placeholders)
 
   internal var blurRadius: Int? = null
     set(value) {
@@ -296,11 +269,11 @@ class ExpoImageView(
 
       expoImageViewWrapper.get()?.onLoadStart?.invoke(Unit)
 
-      val defaultSourceToLoad = defaultSourceMap?.createGlideModel()
+      val placeholder = bestPlaceholder?.createGlideModel()
       requestManager
         .asDrawable()
         .load(sourceToLoad.glideData)
-        .apply { if (defaultSourceToLoad != null) thumbnail(requestManager.load(defaultSourceToLoad)) }
+        .apply { if (placeholder != null) thumbnail(requestManager.load(placeholder.glideData)) }
         .apply(options)
         .downsample(DownsampleStrategy.NONE)
         .addListener(GlideRequestListener(expoImageViewWrapper))
@@ -327,6 +300,37 @@ class ExpoImageView(
   // endregion
 
   // region Helper methods
+
+  private fun getBestSource(sources: List<SourceMap>): SourceMap? {
+    if (sources.isEmpty()) {
+      return null
+    }
+
+    if (sources.size == 1) {
+      return sources.first()
+    }
+
+    val parent = parent as? ExpoImageViewWrapper ?: return null
+    val parentRect = Rect(0, 0, parent.width, parent.height)
+    if (parentRect.isEmpty) {
+      return null
+    }
+
+    val targetPixelCount = parentRect.width() * parentRect.height()
+
+    var bestSource: SourceMap? = null
+    var bestFit = Double.MAX_VALUE
+
+    sources.forEach {
+      val fit = abs(1 - (it.pixelCount / targetPixelCount))
+      if (fit < bestFit) {
+        bestFit = fit
+        bestSource = it
+      }
+    }
+
+    return bestSource
+  }
 
   private fun createPropOptions(): RequestOptions {
     return RequestOptions()
